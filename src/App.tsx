@@ -20,6 +20,7 @@ import {
   ClipboardPlus,
 } from "lucide-react";
 import { ThemeArt, themes } from "./Themes";
+import { ClientManagement } from "./Clients";
 import {
   ClientCalendar,
   Documents,
@@ -36,6 +37,7 @@ import { StaffForm, StaffList, OfficeForm, OfficeList } from "./Admin";
 import { DistancePage, RoutePage, StaffMap, VisitMap } from "./Maps";
 import {
   changeOccurrence,
+  resolveClientVisits,
   completeMemo,
   occurrenceKey,
   newId,
@@ -78,7 +80,8 @@ type Screen =
         | "add"
         | "cancellations";
     }
-  | { kind: "weekly" | "documents" | "free-notes" | "requests" }
+  | { kind: "weekly" | "documents" | "free-notes" | "requests" | "clients" }
+  | { kind: "client-documents"; clientId: string }
   | { kind: "client-calendar"; client: Client; date: string }
   | { kind: "detail" | "edit" | "destination"; visit: Occurrence };
 const titles: Record<Screen["kind"], string> = {
@@ -105,6 +108,8 @@ const titles: Record<Screen["kind"], string> = {
   documents: "書類更新管理",
   "free-notes": "フリーメモ",
   requests: "新規依頼管理",
+  clients: "利用者管理",
+  "client-documents": "利用者の書類",
 };
 export default function App() {
   const [loggedIn, setLoggedIn] = useState(false);
@@ -114,8 +119,15 @@ export default function App() {
   );
   const [staff, setStaff] = useState(staffSeed);
   const [offices, setOffices] = useState(officeSeed);
-  const [visits, setVisits] = useState(visitSeed);
+  const [storedVisits, setVisits] = useState(visitSeed);
   const [clients, setClients] = useState(clientSeed);
+  const visits = resolveClientVisits(storedVisits, clients);
+  const saveClient = (client: Client) =>
+    setClients((prev) =>
+      prev.some((c) => c.id === client.id)
+        ? prev.map((c) => (c.id === client.id ? client : c))
+        : [...prev, client],
+    );
   const [requests, setRequests] = useState<NewRequest[]>([]);
   const [notices, setNotices] = useState(noticeSeed);
   const [screens, setScreens] = useState<Screen[]>([{ kind: "home" }]);
@@ -187,19 +199,17 @@ export default function App() {
     scope: EditScope,
     target?: Occurrence,
   ) => {
-    if (!draft.clientId) {
-      const id = newId();
-      const client: Client = {
-        id,
-        name: draft.client.trim(),
-        address: draft.address,
-        phone: draft.phone,
-        ownerId: draft.staffId,
-        nextDueMonth: "",
-      };
-      setClients((prev) => [...prev, client]);
-      draft = { ...draft, clientId: id };
+    const client = clients.find((c) => c.id === draft.clientId);
+    if (!client) {
+      flash("登録済み利用者を選択してください");
+      return;
     }
+    draft = {
+      ...draft,
+      client: client.name,
+      address: client.address,
+      phone: client.phone,
+    };
     setVisits((previous) =>
       target
         ? changeOccurrence(previous, target, draft, rule, scope, newId())
@@ -309,13 +319,36 @@ export default function App() {
     case "client-calendar":
       content = (
         <ClientCalendar
-          client={screen.client}
+          client={clients.find((c) => c.id === screen.client.id)!}
           visits={visits}
           initialDate={screen.date}
           onOpen={open}
         />
       );
       break;
+    case "clients":
+      content = (
+        <ClientManagement
+          clients={clients}
+          offices={offices}
+          staff={staff}
+          onSave={saveClient}
+          onCalendar={(client) =>
+            push({ kind: "client-calendar", client, date: today })
+          }
+          onDocuments={(client) =>
+            push({ kind: "client-documents", clientId: client.id })
+          }
+        />
+      );
+      break;
+    case "client-documents": {
+      const client = clients.find((c) => c.id === screen.clientId)!;
+      content = (
+        <Documents clients={[client]} staffId={client.ownerId} clientOnly />
+      );
+      break;
+    }
     case "weekly":
       content = <WeeklySchedule visits={visits} staff={staff} onOpen={open} />;
       break;
@@ -328,6 +361,10 @@ export default function App() {
     case "requests":
       content = (
         <Requests
+          clients={clients}
+          offices={offices}
+          staff={staff}
+          onSaveClient={saveClient}
           requests={requests}
           onAdd={(r) => {
             setRequests((prev) => [r, ...prev]);
@@ -361,6 +398,7 @@ export default function App() {
     case "edit":
       content = (
         <VisitForm
+          onSaveClient={saveClient}
           clients={clients}
           existing={screen.kind === "edit" ? screen.visit : null}
           date={date}
@@ -641,6 +679,12 @@ export default function App() {
             onClick={() => push({ kind: "theme" })}
           />
           <h3>管理</h3>
+          <Menu
+            icon={<Users />}
+            title="利用者管理"
+            sub="利用者マスタ・基本情報・月間予定"
+            onClick={() => push({ kind: "clients" })}
+          />
           <Menu
             icon={<Files />}
             title="書類更新管理"

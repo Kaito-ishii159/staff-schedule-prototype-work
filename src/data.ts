@@ -113,6 +113,9 @@ for (const [index, [staffId, date]] of [
 export const clientSeed: Client[] = visitSeed.map((v) => ({
   id: v.clientId!,
   name: v.client,
+  kana: `${v.client.replace("様", "")}サマ`,
+  officeId: staffSeed.find((s) => s.id === v.staffId)!.officeId,
+  active: true,
   address: v.address,
   phone: v.phone,
   ownerId: v.staffId,

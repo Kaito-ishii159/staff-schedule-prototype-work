@@ -9,6 +9,7 @@ import {
   changeOccurrence,
   cancelOccurrence,
   weekStart,
+  resolveClientVisits,
 } from "../src/domain.ts";
 const seed = () => ({
   id: "v",
@@ -32,6 +33,36 @@ const seed = () => ({
     startDate: "2026-10-05",
   },
   exceptions: {},
+});
+test("master updates use ID rather than duplicate names and preserve cancelled/memo occurrences", () => {
+  let visits = [seed(), { ...seed(), id: "v2", clientId: "c2" }];
+  visits = completeMemo(visits, occurrencesOn(visits, "2026-10-05")[0]);
+  visits = cancelOccurrence(visits, occurrencesOn(visits, "2026-10-07")[0]);
+  const clients = [
+    {
+      id: "c1",
+      name: "変更後",
+      phone: "000-0000-0001",
+      address: "新住所",
+      active: false,
+    },
+    { id: "c2", name: "A様", phone: "000-0000-0002", address: "別住所" },
+  ];
+  const resolved = resolveClientVisits(visits, clients);
+  const cancelled = occurrencesOn(resolved, "2026-10-07").find(
+    (v) => v.clientId === "c1",
+  );
+  assert.equal(cancelled.status, "cancelled");
+  assert.equal(cancelled.client, "変更後");
+  assert.equal(cancelled.phone, "000-0000-0001");
+  assert.equal(
+    occurrencesOn(resolved, "2026-10-05").find((v) => v.clientId === "c1")
+      .memoCompleted,
+    true,
+  );
+  assert.equal(clientMonth(resolved, "c1", "2026-10")[6].visits.length, 1);
+  assert.equal(resolved[1].client, "A様");
+  assert.equal(visits[0].client, "A様");
 });
 test("client month uses customer identity, keeps multiple services and cancellations, and handles Monday-first weeks", () => {
   const a = seed();

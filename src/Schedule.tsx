@@ -11,6 +11,7 @@ import {
   Users,
 } from "lucide-react";
 import { Avatar, DateControl, Empty, Footer, Modal } from "./components";
+import { ClientPicker } from "./Clients";
 import {
   dateLabel,
   fieldsOf,
@@ -61,8 +62,9 @@ export function Schedule({
 }: ScheduleProps) {
   const [query, setQuery] = useState("");
   const [zoom, setZoom] = useState(100);
-  const PIXELS_PER_MINUTE = (3 * zoom) / 100;
-  const minimumCardWidth = Math.max(120, (132 * zoom) / 100);
+  const overview = zoom === 0;
+  const [viewportWidth, setViewportWidth] = useState(350);
+  const minimumCardWidth = overview ? 52 : Math.max(120, (132 * zoom) / 100);
   const scroll = useRef<HTMLDivElement>(null);
   const names = staff.filter(
     (s) =>
@@ -78,14 +80,25 @@ export function Schedule({
     18,
     ...relevant.map((v) => Math.ceil(minutes(v.end) / 60) + 1),
   );
+  const PIXELS_PER_MINUTE = overview
+    ? Math.max(180, viewportWidth - 88) / ((endHour - startHour) * 60)
+    : (3 * zoom) / 100;
   const width = (endHour - startHour) * 60 * PIXELS_PER_MINUTE;
+  useEffect(() => {
+    if (!scroll.current) return;
+    const update = () => setViewportWidth(scroll.current!.clientWidth);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(scroll.current);
+    return () => observer.disconnect();
+  }, []);
   useEffect(() => {
     if (scroll.current)
       scroll.current.scrollLeft = Math.max(
         0,
-        (9.75 - startHour) * 60 * PIXELS_PER_MINUTE,
+        overview ? 0 : (9.75 - startHour) * 60 * PIXELS_PER_MINUTE,
       );
-  }, [startHour, PIXELS_PER_MINUTE]);
+  }, [startHour, PIXELS_PER_MINUTE, overview]);
   useEffect(() => {
     if (focus) setQuery("");
   }, [focus]);
@@ -93,13 +106,15 @@ export function Schedule({
     if (!focus || !scroll.current) return;
     scroll.current.scrollLeft = Math.max(
       0,
-      (minutes(focus.time) - startHour * 60 - 5) * PIXELS_PER_MINUTE,
+      overview
+        ? 0
+        : (minutes(focus.time) - startHour * 60 - 5) * PIXELS_PER_MINUTE,
     );
     const row = scroll.current.querySelector<HTMLElement>(
       `[data-staff-id="${focus.staffId}"]`,
     );
     if (row) scroll.current.scrollTop = Math.max(0, row.offsetTop - 36);
-  }, [focus, startHour, query, PIXELS_PER_MINUTE]);
+  }, [focus, startHour, query, PIXELS_PER_MINUTE, overview]);
   return (
     <div className="page schedule">
       <DateControl date={date} onChange={setDate} />
@@ -142,24 +157,36 @@ export function Schedule({
       </div>
       <div className="zoom-control" aria-label="予定表の表示倍率">
         <span>表示倍率</span>
+        <select
+          aria-label="表示倍率"
+          value={zoom}
+          onChange={(e) => setZoom(Number(e.target.value))}
+        >
+          <option value={0}>全体表示</option>
+          {[75, 100, 125, 150].map((n) => (
+            <option key={n} value={n}>
+              {n}%
+            </option>
+          ))}
+        </select>
         <button
           aria-label="予定表を縮小"
-          disabled={zoom === 75}
-          onClick={() => setZoom(zoom - 25)}
+          disabled={overview}
+          onClick={() => setZoom(zoom === 75 ? 0 : zoom - 25)}
         >
           −
         </button>
-        <output aria-live="polite">{zoom}%</output>
+        <output aria-live="polite">{overview ? "全体表示" : `${zoom}%`}</output>
         <button
           aria-label="予定表を拡大"
           disabled={zoom === 150}
-          onClick={() => setZoom(zoom + 25)}
+          onClick={() => setZoom(overview ? 75 : zoom + 25)}
         >
           ＋
         </button>
       </div>
       <div
-        className="timeline-scroll"
+        className={`timeline-scroll ${overview ? "overview" : ""}`}
         ref={scroll}
         tabIndex={0}
         role="region"
@@ -171,9 +198,14 @@ export function Schedule({
             <div className="timeline-hours" style={{ width }}>
               {Array.from({ length: endHour - startHour }, (_, i) => (
                 <span key={i} style={{ width: 60 * PIXELS_PER_MINUTE }}>
-                  {startHour + i}:00
+                  {overview
+                    ? i % 2 === 0
+                      ? `${startHour + i}`
+                      : ""
+                    : `${startHour + i}:00`}
                 </span>
               ))}
+              {overview && <b className="overview-end">{endHour}</b>}
             </div>
           </div>
           {names.map((member) => {
@@ -183,8 +215,10 @@ export function Schedule({
               minimumCardWidth,
             );
             const height = Math.max(
-              104,
-              (Math.max(0, ...entries.map((e) => e.lane)) + 1) * 96 + 12,
+              overview ? 64 : 104,
+              (Math.max(0, ...entries.map((e) => e.lane)) + 1) *
+                (overview ? 48 : 96) +
+                12,
             );
             return (
               <div
@@ -206,18 +240,20 @@ export function Schedule({
                 >
                   {entries.map(({ item, lane }) => (
                     <TimelineCard
+                      compact={overview}
                       key={`${item.seriesId}:${item.occurrenceDate}`}
                       visit={item}
-                      left={
+                      left={Math.min(
                         (minutes(item.time) - startHour * 60) *
-                        PIXELS_PER_MINUTE
-                      }
+                          PIXELS_PER_MINUTE,
+                        width - minimumCardWidth,
+                      )}
                       width={Math.max(
                         minimumCardWidth,
                         (minutes(item.end) - minutes(item.time)) *
                           PIXELS_PER_MINUTE,
                       )}
-                      top={6 + lane * 96}
+                      top={6 + lane * (overview ? 48 : 96)}
                       onOpen={() => onOpen(item)}
                       onChange={() => onChange(item)}
                     />
@@ -237,6 +273,7 @@ export function Schedule({
   );
 }
 function TimelineCard({
+  compact = false,
   visit,
   left,
   width,
@@ -244,6 +281,7 @@ function TimelineCard({
   onOpen,
   onChange,
 }: {
+  compact?: boolean;
   visit: Occurrence;
   left: number;
   width: number;
@@ -294,10 +332,11 @@ function TimelineCard({
           held.current = false;
         }}
       >
-        <b>
-          {visit.time}–{visit.end}
-        </b>
-        <strong>{visit.client}</strong>
+        <b>{compact ? visit.time : `${visit.time}–${visit.end}`}</b>
+        <strong>
+          {visit.client}
+          {compact && hasPendingMemo(visit) && " !"}
+        </strong>
         <span>{visit.type}</span>
         {visit.status === "cancelled" ? (
           <small className="cancel-label">キャンセル</small>
@@ -372,6 +411,7 @@ export function ScopeSelector({
   );
 }
 interface FormProps {
+  onSaveClient: (client: Client) => void;
   clients?: Client[];
   existing: Occurrence | null;
   date: string;
@@ -386,6 +426,7 @@ interface FormProps {
   onCancel: () => void;
 }
 export function VisitForm({
+  onSaveClient,
   clients = [],
   existing,
   date,
@@ -431,7 +472,12 @@ export function VisitForm({
         const activeRule = rule
           ? { ...rule, startDate: draft.date }
           : undefined;
-        const message = validateVisit(draft, single ? undefined : activeRule);
+        const selectedClient = clients.find((c) => c.id === draft.clientId);
+        const message = !selectedClient
+          ? "登録済み利用者を選択してください。"
+          : !selectedClient.active && existing?.clientId !== selectedClient.id
+            ? "利用停止中の利用者は選択できません。"
+            : validateVisit(draft, single ? undefined : activeRule);
         if (message) {
           setError(message);
           return;
@@ -467,35 +513,27 @@ export function VisitForm({
         <TimeFields draft={draft} onChange={put} />
       </div>
       <div className="formcard">
-        <label>
-          登録済み利用者
-          <select
-            aria-label="登録済み利用者"
-            value={draft.clientId || ""}
-            onChange={(e) => {
-              const c = clients.find((c) => c.id === e.target.value);
-              setDraft({
-                ...draft,
-                clientId: c?.id,
-                client: c?.name || "",
-                address: c?.address || "",
-                phone: c?.phone || "",
-              });
-            }}
-          >
-            <option value="">新しい利用者を入力</option>
-            {clients.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name} · {c.address}
-              </option>
-            ))}
-          </select>
-        </label>
+        <ClientPicker
+          clients={clients}
+          offices={offices}
+          staff={staff}
+          value={draft.clientId}
+          onSave={onSaveClient}
+          onSelect={(c) =>
+            setDraft({
+              ...draft,
+              clientId: c.id,
+              client: c.name,
+              phone: c.phone,
+              address: c.address,
+            })
+          }
+        />
         <label>
           訪問先
           <input
             required
-            readOnly={!!draft.clientId}
+            readOnly
             value={draft.client}
             placeholder="例：A様"
             onChange={(e) => put("client", e.target.value)}
@@ -504,6 +542,7 @@ export function VisitForm({
         <label>
           住所
           <input
+            readOnly
             value={draft.address}
             placeholder="東京都新宿区・サンプル住所"
             onChange={(e) => put("address", e.target.value)}
@@ -512,6 +551,7 @@ export function VisitForm({
         <label>
           電話番号
           <input
+            readOnly
             type="tel"
             autoComplete="tel"
             value={draft.phone}
