@@ -14,6 +14,8 @@ import { Avatar, DateControl, Empty, Footer, Modal } from "./components";
 import {
   dateLabel,
   fieldsOf,
+  hasPendingMemo,
+  serviceKinds,
   telephoneHref,
   minutes,
   recurrenceLabel,
@@ -28,6 +30,7 @@ import {
   type RecurrenceRule,
   type Staff,
   type VisitFields,
+  type Client,
 } from "./domain";
 
 interface ScheduleProps {
@@ -43,7 +46,6 @@ interface ScheduleProps {
   onChange: (v: Occurrence) => void;
   onAdd: () => void;
 }
-const PIXELS_PER_MINUTE = 3;
 export function Schedule({
   focus,
   items,
@@ -58,6 +60,9 @@ export function Schedule({
   onAdd,
 }: ScheduleProps) {
   const [query, setQuery] = useState("");
+  const [zoom, setZoom] = useState(100);
+  const PIXELS_PER_MINUTE = (3 * zoom) / 100;
+  const minimumCardWidth = Math.max(120, (132 * zoom) / 100);
   const scroll = useRef<HTMLDivElement>(null);
   const names = staff.filter(
     (s) =>
@@ -80,7 +85,7 @@ export function Schedule({
         0,
         (9.75 - startHour) * 60 * PIXELS_PER_MINUTE,
       );
-  }, [startHour]);
+  }, [startHour, PIXELS_PER_MINUTE]);
   useEffect(() => {
     if (focus) setQuery("");
   }, [focus]);
@@ -94,7 +99,7 @@ export function Schedule({
       `[data-staff-id="${focus.staffId}"]`,
     );
     if (row) scroll.current.scrollTop = Math.max(0, row.offsetTop - 36);
-  }, [focus, startHour, query]);
+  }, [focus, startHour, query, PIXELS_PER_MINUTE]);
   return (
     <div className="page schedule">
       <DateControl date={date} onChange={setDate} />
@@ -135,6 +140,24 @@ export function Schedule({
           </span>
         ))}
       </div>
+      <div className="zoom-control" aria-label="予定表の表示倍率">
+        <span>表示倍率</span>
+        <button
+          aria-label="予定表を縮小"
+          disabled={zoom === 75}
+          onClick={() => setZoom(zoom - 25)}
+        >
+          −
+        </button>
+        <output aria-live="polite">{zoom}%</output>
+        <button
+          aria-label="予定表を拡大"
+          disabled={zoom === 150}
+          onClick={() => setZoom(zoom + 25)}
+        >
+          ＋
+        </button>
+      </div>
       <div
         className="timeline-scroll"
         ref={scroll}
@@ -157,6 +180,7 @@ export function Schedule({
             const entries = timelineLanes(
               relevant.filter((v) => v.staffId === member.id),
               PIXELS_PER_MINUTE,
+              minimumCardWidth,
             );
             const height = Math.max(
               104,
@@ -189,7 +213,7 @@ export function Schedule({
                         PIXELS_PER_MINUTE
                       }
                       width={Math.max(
-                        132,
+                        minimumCardWidth,
                         (minutes(item.end) - minutes(item.time)) *
                           PIXELS_PER_MINUTE,
                       )}
@@ -297,6 +321,15 @@ function TimelineCard({
       >
         <Ellipsis size={16} />
       </button>
+      {hasPendingMemo(visit) && (
+        <button
+          className="timeline-memo memo-alert"
+          aria-label={`${visit.client}の未完了メモを見る`}
+          onClick={onOpen}
+        >
+          !
+        </button>
+      )}
     </div>
   );
 }
@@ -339,6 +372,7 @@ export function ScopeSelector({
   );
 }
 interface FormProps {
+  clients?: Client[];
   existing: Occurrence | null;
   date: string;
   staff: Staff[];
@@ -352,6 +386,7 @@ interface FormProps {
   onCancel: () => void;
 }
 export function VisitForm({
+  clients = [],
   existing,
   date,
   staff,
@@ -374,6 +409,9 @@ export function VisitForm({
           type: "定期訪問",
           content: "",
           memo: "",
+          memoScope: "single",
+          memoDate: date,
+          serviceKind: "看護",
           staffId: defaultStaffId,
         },
   );
@@ -398,7 +436,19 @@ export function VisitForm({
           setError(message);
           return;
         }
-        onSave(draft, single ? existing?.recurrenceRule : activeRule, scope);
+        onSave(
+          {
+            ...draft,
+            memoDate:
+              draft.memoScope === "single"
+                ? single
+                  ? existing!.occurrenceDate
+                  : draft.date
+                : undefined,
+          },
+          single ? existing?.recurrenceRule : activeRule,
+          scope,
+        );
       }}
     >
       {existing?.recurrenceRule && (
@@ -418,9 +468,34 @@ export function VisitForm({
       </div>
       <div className="formcard">
         <label>
+          登録済み利用者
+          <select
+            aria-label="登録済み利用者"
+            value={draft.clientId || ""}
+            onChange={(e) => {
+              const c = clients.find((c) => c.id === e.target.value);
+              setDraft({
+                ...draft,
+                clientId: c?.id,
+                client: c?.name || "",
+                address: c?.address || "",
+                phone: c?.phone || "",
+              });
+            }}
+          >
+            <option value="">新しい利用者を入力</option>
+            {clients.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name} · {c.address}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
           訪問先
           <input
             required
+            readOnly={!!draft.clientId}
             value={draft.client}
             placeholder="例：A様"
             onChange={(e) => put("client", e.target.value)}
@@ -456,6 +531,19 @@ export function VisitForm({
           </select>
         </label>
         <label>
+          訪問区分
+          <select
+            value={draft.serviceKind || "看護"}
+            onChange={(e) =>
+              put("serviceKind", e.target.value as VisitFields["serviceKind"])
+            }
+          >
+            {serviceKinds.map((kind) => (
+              <option key={kind}>{kind}</option>
+            ))}
+          </select>
+        </label>
+        <label>
           内容
           <textarea
             value={draft.content}
@@ -471,6 +559,23 @@ export function VisitForm({
             onChange={(e) => put("memo", e.target.value)}
           />
         </label>
+        <label>
+          メモの適用範囲
+          <select
+            value={draft.memoScope || "recurring"}
+            onChange={(e) =>
+              put("memoScope", e.target.value as "single" | "recurring")
+            }
+          >
+            <option value="single">今回のみ</option>
+            <option value="recurring">繰り返し</option>
+          </select>
+        </label>
+        {single && (
+          <p className="field-note">
+            この予定のみ変更中です。次回以降のメモも変更する場合は、上の「今後の予定も変更」を選んでください。
+          </p>
+        )}
         <label>
           担当職員
           <select
@@ -724,6 +829,8 @@ export function Detail({
   onMap,
   onDelete,
   onCancelVisit,
+  onClient,
+  onCompleteMemo,
 }: {
   visit: Occurrence;
   staff: Staff[];
@@ -733,6 +840,8 @@ export function Detail({
   onMap: () => void;
   onDelete: () => void;
   onCancelVisit: () => void;
+  onClient: () => void;
+  onCompleteMemo: () => void;
 }) {
   const owner = staff.find((s) => s.id === visit.staffId);
   const [deleting, setDeleting] = useState(false);
@@ -755,7 +864,9 @@ export function Detail({
         <dl>
           <dt>訪問先・住所</dt>
           <dd>
-            {visit.client}
+            <button className="client-link" onClick={onClient}>
+              {visit.client} <span>月間スケジュールを見る →</span>
+            </button>
             <p>{visit.address || "住所なし"}</p>
           </dd>
           <dt>担当職員</dt>
@@ -775,7 +886,24 @@ export function Detail({
           <dt>内容</dt>
           <dd>{visit.content || "内容なし"}</dd>
           <dt>メモ</dt>
-          <dd>{visit.memo || "メモなし"}</dd>
+          <dd className="preserve-lines">
+            {visit.memo || "メモなし"}
+            {visit.memo && (
+              <>
+                <p>
+                  {visit.memoScope === "single" ? "今回のみ" : "繰り返し"} ·{" "}
+                  {visit.memoCompleted ? "完了" : "未完了"}
+                </p>
+                {hasPendingMemo(visit) && (
+                  <button className="primary" onClick={onCompleteMemo}>
+                    メモ完了
+                  </button>
+                )}
+              </>
+            )}
+          </dd>
+          <dt>訪問区分</dt>
+          <dd>{visit.serviceKind || "未設定"}</dd>
           <dt>繰り返し</dt>
           <dd>
             {recurrenceLabel(visit.recurrenceRule)}
