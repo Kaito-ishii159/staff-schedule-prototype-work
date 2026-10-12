@@ -174,34 +174,27 @@
   padding-right: 20px;
   font-size: 10px;
 }
-.zoom-control {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
-  margin: 10px 0;
+.schedule-modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  margin: 12px 0;
+  border-radius: 14px;
+  background: var(--accent-light);
 }
-.zoom-control > span {
-  margin-right: auto;
-  font-size: 12px;
-  color: #596d7c;
-}
-.zoom-control button {
-  min-width: 44px;
+.schedule-modes button {
   min-height: 44px;
-  background: #fff;
-  border: 1px solid #d9e3e9;
-  border-radius: 12px;
-  font-size: 20px;
-}
-.zoom-control output {
-  width: 48px;
-  text-align: center;
+  background: transparent;
+  border-radius: 10px;
   font-size: 13px;
-  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--accent);
 }
-.zoom-control button:disabled {
-  opacity: 0.35;
+.schedule-modes button[aria-pressed="true"] {
+  color: #fff;
+  background: var(--accent);
+  box-shadow: 0 2px 5px #162b4520;
 }
 .client-link {
   text-align: left;
@@ -577,27 +570,12 @@ button:focus-visible {
   justify-content: center;
   min-height: 44px;
 }
-.zoom-control {
-  flex-wrap: wrap;
-}
-.zoom-control select {
-  width: auto;
-  max-width: 115px;
-  min-height: 44px;
-}
-.zoom-control output {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-}
 .overview .timeline-hours span {
   padding: 8px 0;
   font-size: 10px;
 }
 .overview .timeline-card {
-  height: 42px;
+  height: 52px;
   border-radius: 5px;
 }
 .overview .timeline-hit {
@@ -622,6 +600,28 @@ button:focus-visible {
 }
 .overview .timeline-name {
   font-size: 11px;
+}
+.overview .timeline-hit .cancel-label {
+  display: inline-block;
+  font-size: 8px;
+  line-height: 10px;
+  padding: 0;
+  margin: 0;
+}
+.overview .timeline-hit .compact-memo {
+  display: block;
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 12px;
+  height: 12px;
+  line-height: 12px;
+  text-align: center;
+  background: #fff0bf;
+  color: #84520b;
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: 800;
 }
 .overview .timeline-hours {
   position: relative;

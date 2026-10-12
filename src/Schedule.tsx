@@ -61,10 +61,10 @@ export function Schedule({
   onAdd,
 }: ScheduleProps) {
   const [query, setQuery] = useState("");
-  const [zoom, setZoom] = useState(100);
-  const overview = zoom === 0;
+  const [mode, setMode] = useState<"detail" | "overview">("detail");
+  const overview = mode === "overview";
   const [viewportWidth, setViewportWidth] = useState(350);
-  const minimumCardWidth = overview ? 52 : Math.max(120, (132 * zoom) / 100);
+  const minimumCardWidth = overview ? 52 : 132;
   const scroll = useRef<HTMLDivElement>(null);
   const names = staff.filter(
     (s) =>
@@ -82,7 +82,7 @@ export function Schedule({
   );
   const PIXELS_PER_MINUTE = overview
     ? Math.max(180, viewportWidth - 88) / ((endHour - startHour) * 60)
-    : (3 * zoom) / 100;
+    : 3;
   const width = (endHour - startHour) * 60 * PIXELS_PER_MINUTE;
   useEffect(() => {
     if (!scroll.current) return;
@@ -141,7 +141,11 @@ export function Schedule({
         />
       </label>
       <div className="timeline-guide">
-        <span>横にスワイプして時間を移動</span>
+        <span>
+          {overview
+            ? "時刻と利用者を俯瞰 · タップで詳細"
+            : "横にスワイプして時間を移動"}
+        </span>
         <button onClick={onAdd}>
           <Plus size={16} />
           追加
@@ -155,34 +159,16 @@ export function Schedule({
           </span>
         ))}
       </div>
-      <div className="zoom-control" aria-label="予定表の表示倍率">
-        <span>表示倍率</span>
-        <select
-          aria-label="表示倍率"
-          value={zoom}
-          onChange={(e) => setZoom(Number(e.target.value))}
-        >
-          <option value={0}>全体表示</option>
-          {[75, 100, 125, 150].map((n) => (
-            <option key={n} value={n}>
-              {n}%
-            </option>
-          ))}
-        </select>
-        <button
-          aria-label="予定表を縮小"
-          disabled={overview}
-          onClick={() => setZoom(zoom === 75 ? 0 : zoom - 25)}
-        >
-          −
+      <div
+        className="schedule-modes"
+        role="group"
+        aria-label="予定表の表示モード"
+      >
+        <button aria-pressed={!overview} onClick={() => setMode("detail")}>
+          詳細表示
         </button>
-        <output aria-live="polite">{overview ? "全体表示" : `${zoom}%`}</output>
-        <button
-          aria-label="予定表を拡大"
-          disabled={zoom === 150}
-          onClick={() => setZoom(overview ? 75 : zoom + 25)}
-        >
-          ＋
+        <button aria-pressed={overview} onClick={() => setMode("overview")}>
+          全体表示
         </button>
       </div>
       <div
@@ -217,7 +203,7 @@ export function Schedule({
             const height = Math.max(
               overview ? 64 : 104,
               (Math.max(0, ...entries.map((e) => e.lane)) + 1) *
-                (overview ? 48 : 96) +
+                (overview ? 58 : 96) +
                 12,
             );
             return (
@@ -253,7 +239,7 @@ export function Schedule({
                         (minutes(item.end) - minutes(item.time)) *
                           PIXELS_PER_MINUTE,
                       )}
-                      top={6 + lane * (overview ? 48 : 96)}
+                      top={6 + lane * (overview ? 58 : 96)}
                       onOpen={() => onOpen(item)}
                       onChange={() => onChange(item)}
                     />
@@ -333,10 +319,12 @@ function TimelineCard({
         }}
       >
         <b>{compact ? visit.time : `${visit.time}–${visit.end}`}</b>
-        <strong>
-          {visit.client}
-          {compact && hasPendingMemo(visit) && " !"}
-        </strong>
+        <strong>{visit.client}</strong>
+        {compact && hasPendingMemo(visit) && (
+          <small className="compact-memo" aria-label="未完了のメモあり">
+            !
+          </small>
+        )}
         <span>{visit.type}</span>
         {visit.status === "cancelled" ? (
           <small className="cancel-label">キャンセル</small>
