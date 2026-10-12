@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ChevronLeft, ChevronRight, Plus, Trash2 } from "lucide-react";
 import { Empty, Modal } from "./components";
+import { ClientPicker } from "./Clients";
 import {
   addDays,
   clientMonth,
@@ -14,6 +15,7 @@ import {
   typeClass,
   weekStart,
   type Client,
+  type Office,
   type Occurrence,
   type Staff,
   type Visit,
@@ -282,9 +284,11 @@ function storeLocal(key: string, value: unknown) {
 export function Documents({
   clients,
   staffId,
+  clientOnly = false,
 }: {
   clients: Client[];
   staffId: string;
+  clientOnly?: boolean;
 }) {
   const key = `visit-documents:${staffId}`;
   const [checks, setChecks] = useState<Record<string, boolean>>(() =>
@@ -304,7 +308,11 @@ export function Documents({
   return (
     <div className="page">
       <h1>書類更新管理</h1>
-      <p className="field-note">自分の担当利用者の更新チェック</p>
+      <p className="field-note">
+        {clientOnly
+          ? "選択した利用者の更新チェック"
+          : "自分の担当利用者の更新チェック"}
+      </p>
       <div className="formcard">
         <label>
           報告書の対象月
@@ -478,21 +486,29 @@ export function FreeNotes({ staffId }: { staffId: string }) {
 
 export type NewRequest = {
   id: string;
-  client: string;
+  clientId: string;
   source: string;
   info: string;
   body: string;
 };
 export function Requests({
+  clients,
+  offices,
+  staff,
+  onSaveClient,
   requests,
   onAdd,
 }: {
+  clients: Client[];
+  offices: Office[];
+  staff: Staff[];
+  onSaveClient: (c: Client) => void;
   requests: NewRequest[];
   onAdd: (v: NewRequest) => void;
 }) {
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState({
-    client: "",
+    clientId: "",
     source: "",
     info: "",
     body: "",
@@ -507,7 +523,10 @@ export function Requests({
       </button>
       {requests.map((r) => (
         <article className="document-card" key={r.id}>
-          <h2>{r.client}</h2>
+          <h2>
+            {clients.find((c) => c.id === r.clientId)?.name || "利用者情報なし"}
+          </h2>
+          <small>{r.clientId}</small>
           <p>
             <b>依頼元：</b>
             {r.source}
@@ -525,15 +544,27 @@ export function Requests({
             className="request-form"
             onSubmit={(e) => {
               e.preventDefault();
-              if (!draft.client.trim() || !draft.source.trim()) return;
+              if (!draft.clientId || !draft.source.trim()) return;
               onAdd({ ...draft, id: newId() });
-              setDraft({ client: "", source: "", info: "", body: "" });
+              setDraft({ clientId: "", source: "", info: "", body: "" });
               setAdding(false);
             }}
           >
+            <ClientPicker
+              clients={clients}
+              offices={offices}
+              staff={staff}
+              value={draft.clientId}
+              onSave={onSaveClient}
+              onSelect={(c) => setDraft({ ...draft, clientId: c.id })}
+            />
+            {!draft.clientId && (
+              <p className="field-note">
+                登録済み利用者を選択、または新しい利用者を登録してください。
+              </p>
+            )}
             {(
               [
-                ["client", "新規顧客名"],
                 ["source", "依頼元"],
                 ["info", "簡単な利用者情報"],
                 ["body", "フリー記載欄"],
@@ -541,7 +572,7 @@ export function Requests({
             ).map(([key, label]) => (
               <label key={key}>
                 {label}
-                {key === "client" || key === "source" ? (
+                {key === "source" ? (
                   <input
                     required
                     value={draft[key]}

@@ -13,10 +13,36 @@ export type ServiceKind = (typeof serviceKinds)[number];
 export interface Client {
   id: string;
   name: string;
+  kana: string;
+  officeId: string;
+  active: boolean;
   address: string;
   phone: string;
   ownerId: string;
   nextDueMonth: string;
+}
+// Contact details are resolved by stable ID, including moved/cancelled exceptions.
+export function resolveClientVisits(
+  visits: Visit[],
+  clients: Client[],
+): Visit[] {
+  const index = new Map(clients.map((c) => [c.id, c]));
+  const resolve = <T extends VisitFields>(v: T): T => {
+    const c = index.get(v.clientId || "");
+    return c ? { ...v, client: c.name, address: c.address, phone: c.phone } : v;
+  };
+  return visits.map((v) => ({
+    ...resolve(v),
+    exceptions: Object.fromEntries(
+      Object.entries(v.exceptions).map(([date, ex]) => [
+        date,
+        {
+          ...ex,
+          override: ex.override ? resolve(ex.override) : undefined,
+        },
+      ]),
+    ),
+  }));
 }
 export interface Office {
   id: string;
