@@ -131,23 +131,27 @@ describe("prototype interactions", () => {
     expect(
       screen.getByRole("button", { name: "A様の未完了メモを見る" }),
     ).toBeTruthy();
-    click("予定表を縮小");
-    expect((screen.getByLabelText("表示倍率") as HTMLSelectElement).value).toBe(
-      "75",
-    );
-    click("予定表を拡大");
-    click("予定表を拡大");
-    click("予定表を拡大");
-    expect((screen.getByLabelText("表示倍率") as HTMLSelectElement).value).toBe(
-      "150",
-    );
-    change("表示倍率", "0");
+    click("全体表示");
+    expect(
+      screen
+        .getByRole("button", { name: "全体表示", exact: true })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
     expect(document.querySelector(".timeline-scroll.overview")).toBeTruthy();
     expect(
       parseFloat(
         (document.querySelector(".timeline-table") as HTMLElement).style.width,
       ),
     ).toBeLessThan(400);
+    expect(document.querySelector(".compact-memo")).toBeTruthy();
+    click("詳細表示");
+    expect(document.querySelector(".timeline-scroll.overview")).toBeNull();
+    expect(
+      parseFloat(
+        (document.querySelector(".timeline-table") as HTMLElement).style.width,
+      ),
+    ).toBeGreaterThan(1800);
+    expect(screen.queryByLabelText("表示倍率")).toBeNull();
   });
   it("persists document checks by customer, month and logged-in staff without advancing plan month", () => {
     login();
@@ -296,45 +300,51 @@ describe("prototype interactions", () => {
       screen.getByText("この月・事業所のキャンセル予定はありません。"),
     ).toBeTruthy();
   });
-  it("opens long-press change at 600ms and cancels on scrolling", () => {
-    vi.useFakeTimers();
-    const onChange = vi.fn();
-    const onOpen = vi.fn();
-    render(
-      <Schedule
-        items={occurrencesOn(visitSeed, "2026-10-01")}
-        staff={staffSeed}
-        offices={officeSeed}
-        officeId="office-1"
-        setOfficeId={vi.fn()}
-        date="2026-10-01"
-        setDate={vi.fn()}
-        onOpen={onOpen}
-        onChange={onChange}
-        onAdd={vi.fn()}
-      />,
-    );
-    const card = screen.getByRole("button", {
-      name: "10:00–10:30 A様 定期訪問 繰り返し",
-    });
-    fireEvent.pointerDown(card, { button: 0, clientX: 150, clientY: 50 });
-    act(() => vi.advanceTimersByTime(599));
-    expect(onChange).not.toHaveBeenCalled();
-    act(() => vi.advanceTimersByTime(1));
-    expect(onChange).toHaveBeenCalledTimes(1);
-    fireEvent.pointerUp(card);
-    fireEvent.click(card);
-    expect(onOpen).not.toHaveBeenCalled();
-    onChange.mockClear();
-    fireEvent.pointerDown(card, { button: 0, clientX: 150, clientY: 50 });
-    fireEvent.pointerMove(card, { clientX: 170, clientY: 50 });
-    act(() => vi.advanceTimersByTime(700));
-    expect(onChange).not.toHaveBeenCalled();
-    fireEvent.pointerDown(card, { button: 0 });
-    fireEvent.pointerCancel(card);
-    act(() => vi.advanceTimersByTime(700));
-    expect(onChange).not.toHaveBeenCalled();
-  });
+  it.each(["詳細表示", "全体表示"])(
+    "opens long-press change at 600ms and cancels on scrolling in %s",
+    (mode) => {
+      vi.useFakeTimers();
+      const onChange = vi.fn();
+      const onOpen = vi.fn();
+      render(
+        <Schedule
+          items={occurrencesOn(visitSeed, "2026-10-01")}
+          staff={staffSeed}
+          offices={officeSeed}
+          officeId="office-1"
+          setOfficeId={vi.fn()}
+          date="2026-10-01"
+          setDate={vi.fn()}
+          onOpen={onOpen}
+          onChange={onChange}
+          onAdd={vi.fn()}
+        />,
+      );
+      click(mode);
+      const card = screen.getByRole("button", {
+        name: "10:00–10:30 A様 定期訪問 繰り返し",
+      });
+      fireEvent.pointerDown(card, { button: 0, clientX: 150, clientY: 50 });
+      act(() => vi.advanceTimersByTime(599));
+      expect(onChange).not.toHaveBeenCalled();
+      act(() => vi.advanceTimersByTime(1));
+      expect(onChange).toHaveBeenCalledTimes(1);
+      fireEvent.pointerUp(card);
+      fireEvent.click(card);
+      expect(onOpen).not.toHaveBeenCalled();
+      onChange.mockClear();
+      fireEvent.pointerDown(card, { button: 0, clientX: 150, clientY: 50 });
+      fireEvent.pointerMove(card, { clientX: 170, clientY: 50 });
+      act(() => vi.advanceTimersByTime(700));
+      expect(onChange).not.toHaveBeenCalled();
+      fireEvent.pointerDown(card, { button: 0 });
+      fireEvent.pointerCancel(card);
+      act(() => vi.advanceTimersByTime(700));
+      expect(onChange).not.toHaveBeenCalled();
+      fireEvent.click(card);
+      expect(onOpen).toHaveBeenCalledTimes(1);
+    },
+  );
   it("adds office then staff and exposes them to schedule filters", () => {
     login();
     click("設定");
