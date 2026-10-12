@@ -46,6 +46,105 @@ const login = () => {
   click("ログイン");
 };
 describe("prototype interactions", () => {
+  it("opens a linked customer month with multiple services and a cancelled occurrence", () => {
+    login();
+    click("予定");
+    click("10:00–10:30 A様 定期訪問 繰り返し");
+    click("A様 月間スケジュールを見る →");
+    click("2026-10-02 3件");
+    expect(screen.getByText("● 13:00", { exact: false })).toBeTruthy();
+    const selected = screen.getByRole("button", { name: "2026-10-02 3件" });
+    expect(within(selected).getByText("モニタリング")).toBeTruthy();
+    expect(within(selected).getByText("キャンセル")).toBeTruthy();
+    fireEvent.click(
+      screen.getByRole("button", { name: /16:00.*A様.*キャンセル/ }),
+    );
+    expect(screen.getByText("キャンセル済み")).toBeTruthy();
+  });
+  it("completes only today's memo and preserves recurring memo on next scheduled day", () => {
+    login();
+    click("予定");
+    click("A様の未完了メモを見る");
+    click("メモ完了");
+    expect(screen.queryByRole("button", { name: "メモ完了" })).toBeNull();
+    click("予定");
+    expect(
+      screen.queryByRole("button", { name: "A様の未完了メモを見る" }),
+    ).toBeNull();
+    fireEvent.input(screen.getByLabelText("表示日"), {
+      target: { value: "2026-10-05" },
+    });
+    expect(
+      screen.getByRole("button", { name: "A様の未完了メモを見る" }),
+    ).toBeTruthy();
+    click("予定表を縮小");
+    expect(screen.getByText("75%")).toBeTruthy();
+    click("予定表を拡大");
+    click("予定表を拡大");
+    click("予定表を拡大");
+    expect(screen.getByText("150%")).toBeTruthy();
+  });
+  it("persists document checks by customer, month and logged-in staff without advancing plan month", () => {
+    login();
+    click("書類管理");
+    fireEvent.click(screen.getByRole("checkbox", { name: "A様 報告書 完了" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "A様 計画書 完了" }));
+    click("ホーム");
+    click("書類管理");
+    expect(
+      (
+        screen.getByRole("checkbox", {
+          name: "A様 報告書 完了",
+        }) as HTMLInputElement
+      ).checked,
+    ).toBe(true);
+    fireEvent.input(screen.getByLabelText("報告書の対象月"), {
+      target: { value: "2026-11" },
+    });
+    expect(
+      (
+        screen.getByRole("checkbox", {
+          name: "A様 報告書 完了",
+        }) as HTMLInputElement
+      ).checked,
+    ).toBe(false);
+    expect(
+      (
+        screen.getByRole("checkbox", {
+          name: "A様 計画書 完了",
+        }) as HTMLInputElement
+      ).checked,
+    ).toBe(true);
+    expect(localStorage.getItem("visit-documents:staff-1")).toContain(
+      "2026-12",
+    );
+    expect(localStorage.getItem("visit-documents:staff-2")).toBeNull();
+  });
+  it("saves, edits and deletes a private free note and registers an internal request", () => {
+    login();
+    click("フリーメモ");
+    change("メモ内容", "確認用メモ");
+    click("メモを保存");
+    click("ホーム");
+    click("フリーメモ");
+    expect(screen.getByText("確認用メモ")).toBeTruthy();
+    click("編集");
+    change("メモ内容", "確認完了");
+    click("変更を保存");
+    click("メモを削除");
+    click("削除する");
+    expect(screen.queryByText("確認完了")).toBeNull();
+    click("ホーム");
+    click("新規依頼");
+    click("新規依頼をする");
+    change("新規顧客名", "架空のお客様");
+    change("依頼元", "新宿事業所");
+    change("簡単な利用者情報", "日程相談");
+    change("フリー記載欄", "担当者の調整をお願いします");
+    click("依頼を登録");
+    expect(screen.getByText("架空のお客様")).toBeTruthy();
+    expect(screen.getByText("担当者の調整をお願いします")).toBeTruthy();
+  });
   it("saves and edits a customer telephone number and exposes a normalized tel link", () => {
     login();
     click("予定");
@@ -95,15 +194,17 @@ describe("prototype interactions", () => {
     expect(screen.queryByRole("button", { name: "1 A様 10:00" })).toBeNull();
     click("設定");
     click("キャンセル一覧 月別・事業所別のキャンセル予定");
-    expect(screen.getByText("キャンセル 4件")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /A様.*定期訪問/ }));
+    expect(screen.getByText("キャンセル 5件")).toBeTruthy();
+    fireEvent.click(
+      screen.getByRole("button", { name: /10:00.*A様.*定期訪問/ }),
+    );
     expect(screen.getByText("キャンセル済み")).toBeTruthy();
   });
   it("filters management cancellations by month and office and keeps filters after detail navigation", () => {
     login();
     click("設定");
     click("キャンセル一覧 月別・事業所別のキャンセル予定");
-    expect(screen.getByText("キャンセル 3件")).toBeTruthy();
+    expect(screen.getByText("キャンセル 4件")).toBeTruthy();
     change("事業所", "office-2");
     expect(screen.getByText("キャンセル 2件")).toBeTruthy();
     fireEvent.input(screen.getByLabelText("対象月"), {
@@ -273,7 +374,7 @@ describe("prototype interactions", () => {
     fireEvent.click(ownPins[1]);
     expect(ownPins[1].getAttribute("aria-pressed")).toBe("true");
     click("ホーム");
-    click("職員位置他職員の最終取得位置");
+    click("職員位置 他職員の最終取得位置");
     expect(document.querySelectorAll(".destination-pin")).toHaveLength(0);
     expect(
       screen.queryByRole("button", { name: "職員Aの最終取得位置" }),
@@ -286,28 +387,35 @@ describe("prototype interactions", () => {
   it("applies all themes and preserves choice after remount; notifications still open details", () => {
     login();
     click("設定");
-    click("テーマ ブルー");
+    click("テーマ 白熊");
     for (const [name, id] of [
-      ["グリーン", "green"],
-      ["パープル", "purple"],
-      ["オレンジ", "orange"],
-      ["シンプル", "simple"],
-      ["ブルー", "blue"],
+      ["アニマル", "animals"],
+      ["宇宙", "space"],
+      ["南国", "tropical"],
+      ["花・海・空", "flowers"],
+      ["白熊", "polar"],
     ]) {
-      click(name);
+      fireEvent.click(
+        screen.getByRole("button", { name: new RegExp(`^${name}`) }),
+      );
       expect(document.querySelector(".shell")?.getAttribute("data-theme")).toBe(
         id,
       );
     }
-    click("パープル");
-    expect(localStorage.getItem("visit-theme:staff-1")).toBe("purple");
+    fireEvent.click(screen.getByRole("button", { name: /^宇宙/ }));
+    expect(localStorage.getItem("visit-theme:staff-1")).toBe("space");
     cleanup();
     render(<App />);
     expect(document.querySelector(".shell")?.getAttribute("data-theme")).toBe(
-      "purple",
+      "space",
     );
     click("ログイン");
-    click("通知");
+    fireEvent.click(
+      within(screen.getByRole("navigation")).getByRole("button", {
+        name: "通知",
+        exact: true,
+      }),
+    );
     const notice = screen.getByRole("button", {
       name: /予定が登録されました B様/,
     });
