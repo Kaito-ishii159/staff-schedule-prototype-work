@@ -610,6 +610,8 @@ export function AlcoholChecks({
   const [editor, setEditor] = useState<AlcoholDraft>();
   const [selected, setSelected] = useState<AlcoholCheckRecord>();
   const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+  const original = records.find((record) => record.id === editor?.id);
   const filtered = filterAlcohol(records, month, officeId, vehicleId, driver);
   return (
     <div className="page">
@@ -678,6 +680,7 @@ export function AlcoholChecks({
         className="primary full"
         onClick={() => {
           setError("");
+          setMessage("");
           setEditor({
             id: newId(),
             date: today,
@@ -695,12 +698,16 @@ export function AlcoholChecks({
       >
         チェックを登録
       </button>
+      {message && !selected && <p role="status">{message}</p>}
       <p>{filtered.length}件</p>
       {filtered.map((r) => (
         <button
           className="client-list-item alcohol-item"
           key={r.id}
-          onClick={() => setSelected(r)}
+          onClick={() => {
+            setMessage("");
+            setSelected(r);
+          }}
         >
           <b>
             {dateLabel(r.date)} ·{" "}
@@ -727,8 +734,13 @@ export function AlcoholChecks({
       </p>
       {editor && (
         <Modal
-          title="アルコールチェックを登録"
-          onClose={() => setEditor(undefined)}
+          title={
+            original ? "アルコールチェックを編集" : "アルコールチェックを登録"
+          }
+          onClose={() => {
+            setEditor(undefined);
+            if (original) setSelected(original);
+          }}
         >
           <form
             className="request-form"
@@ -738,41 +750,56 @@ export function AlcoholChecks({
                 !vehicles.some(
                   (v) =>
                     v.id === editor.vehicleId &&
-                    v.active &&
-                    v.officeId === editor.officeId,
+                    ((v.active && v.officeId === editor.officeId) ||
+                      v.id === original?.vehicleId),
                 ) ||
                 !staff.some(
                   (s) =>
                     s.id === editor.driverStaffId &&
-                    s.active &&
-                    s.officeId === editor.officeId,
+                    ((s.active && s.officeId === editor.officeId) ||
+                      s.id === original?.driverStaffId),
                 ) ||
-                !staff.some((s) => s.id === editor.checkerStaffId && s.active)
+                !staff.some(
+                  (s) =>
+                    s.id === editor.checkerStaffId &&
+                    (s.active || s.id === original?.checkerStaffId),
+                )
               ) {
                 setError("車両・運転手・確認者を選択してください。");
                 return;
               }
               if (
+                !editor.date ||
                 editor.startAlcoholDetected === undefined ||
                 editor.endAlcoholDetected === undefined ||
                 editor.startTemperature === "" ||
                 !Number.isFinite(editor.startTemperature) ||
+                editor.startTemperature < 30 ||
+                editor.startTemperature > 45 ||
                 !editor.drivingInstruction
               ) {
-                setError("酒気帯び・体温・指示事項を入力してください。");
+                setError(
+                  "日付・酒気帯び・体温（30〜45℃）・指示事項を入力してください。",
+                );
                 return;
               }
-              onSave({
+              const saved: AlcoholCheckRecord = {
                 ...editor,
                 startAlcoholDetected: editor.startAlcoholDetected,
                 endAlcoholDetected: editor.endAlcoholDetected,
                 startTemperature: editor.startTemperature,
                 drivingInstruction: editor.drivingInstruction,
-              });
+              };
+              onSave(saved);
               setMonth(editor.date.slice(0, 7));
+              setOffice(editor.officeId);
               setVehicle("");
               setDriver("");
               setEditor(undefined);
+              setMessage(
+                original ? "変更を保存しました" : "チェックを保存しました",
+              );
+              if (original) setSelected(saved);
             }}
           >
             <label>
@@ -795,10 +822,15 @@ export function AlcoholChecks({
               >
                 <option value="">車両を選択</option>
                 {vehicles
-                  .filter((v) => v.active && v.officeId === editor.officeId)
+                  .filter(
+                    (v) =>
+                      (v.active && v.officeId === editor.officeId) ||
+                      v.id === original?.vehicleId,
+                  )
                   .map((v) => (
                     <option key={v.id} value={v.id}>
                       {v.label}
+                      {!v.active && "（現在利用停止）"}
                     </option>
                   ))}
               </select>
@@ -822,13 +854,15 @@ export function AlcoholChecks({
                   {staff
                     .filter(
                       (s) =>
-                        s.active &&
-                        (key === "checkerStaffId" ||
-                          s.officeId === editor.officeId),
+                        (s.active &&
+                          (key === "checkerStaffId" ||
+                            s.officeId === editor.officeId)) ||
+                        s.id === original?.[key],
                     )
                     .map((s) => (
                       <option key={s.id} value={s.id}>
                         {s.name}
+                        {!s.active && "（現在利用停止）"}
                       </option>
                     ))}
                 </select>
@@ -911,7 +945,9 @@ export function AlcoholChecks({
               />
             </label>
             {error && <p role="alert">{error}</p>}
-            <button className="primary full">チェックを保存</button>
+            <button className="primary full">
+              {original ? "変更を保存" : "チェックを保存"}
+            </button>
           </form>
         </Modal>
       )}
@@ -920,6 +956,7 @@ export function AlcoholChecks({
           title="アルコールチェック詳細"
           onClose={() => setSelected(undefined)}
         >
+          {message && <p role="status">{message}</p>}
           <dl className="ops-detail">
             {[
               ["日付", selected.date],
@@ -959,6 +996,17 @@ export function AlcoholChecks({
               </div>
             ))}
           </dl>
+          <button
+            className="primary full"
+            onClick={() => {
+              setError("");
+              setMessage("");
+              setEditor({ ...selected });
+              setSelected(undefined);
+            }}
+          >
+            編集
+          </button>
         </Modal>
       )}
     </div>

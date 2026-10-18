@@ -11,9 +11,13 @@ import App from "../src/App";
 import { Schedule } from "../src/Schedule";
 import { occurrencesOn } from "../src/domain";
 import { officeSeed, staffSeed, visitSeed } from "../src/data";
-import { workPatternSeed } from "../src/operationData";
+import {
+  alcoholSeed,
+  vehicleSeed,
+  workPatternSeed,
+} from "../src/operationData";
 import { WeeklySchedule } from "../src/Additional";
-import { SharedNotes } from "../src/OperationsUI";
+import { AlcoholChecks, SharedNotes } from "../src/OperationsUI";
 
 // Seed dates must stay reproducible when CI runs in a later week or timezone.
 vi.hoisted(() => {
@@ -314,6 +318,194 @@ describe("vehicle, work settings and schedule v2", () => {
     change("事業所", "office-2");
     expect(screen.queryByRole("button", { name: /職員B.*職員C/ })).toBeNull();
   });
+  it("edits an existing alcohol check, refreshes detail and list without adding a row", () => {
+    login();
+    click("設定");
+    click("アルコールチェック 手入力の確認記録（デモ）");
+    expect(screen.getByText("1件")).toBeTruthy();
+    fireEvent.click(
+      screen.getByRole("button", { name: /職員A.*職員B.*詳細を見る/ }),
+    );
+    click("編集");
+    expect(
+      screen.getByRole("heading", { name: "アルコールチェックを編集" }),
+    ).toBeTruthy();
+    const modal = within(screen.getByRole("dialog"));
+    expect((modal.getByLabelText("車両") as HTMLSelectElement).value).toBe(
+      "vehicle-1-1",
+    );
+    expect((modal.getByLabelText("運転手") as HTMLSelectElement).value).toBe(
+      "staff-1",
+    );
+    fireEvent.change(modal.getByLabelText("出勤時 体温（℃）"), {
+      target: { value: "36.8" },
+    });
+    fireEvent.change(modal.getByLabelText("特記事項"), {
+      target: { value: "編集後の特記事項" },
+    });
+    click("変更を保存");
+    expect(screen.getByRole("status").textContent).toBe("変更を保存しました");
+    expect(
+      screen.getByRole("heading", { name: "アルコールチェック詳細" }),
+    ).toBeTruthy();
+    expect(screen.getByText("36.8℃")).toBeTruthy();
+    expect(screen.getByText("編集後の特記事項")).toBeTruthy();
+    click("閉じる");
+    expect(screen.getByText("1件")).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: /詳細を見る/ })).toHaveLength(
+      1,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /職員A.*36.8℃/ }));
+    expect(screen.getByText("編集後の特記事項")).toBeTruthy();
+    click("編集");
+    fireEvent.change(
+      within(screen.getByRole("dialog")).getByLabelText("特記事項"),
+      { target: { value: "未保存" } },
+    );
+    click("閉じる");
+    expect(screen.getByText("編集後の特記事項")).toBeTruthy();
+    expect(screen.queryByText("未保存")).toBeNull();
+  });
+  it("retains only the original inactive master choices and saves all edited fields with the same ID", () => {
+    const onSave = vi.fn();
+    render(
+      <AlcoholChecks
+        records={alcoholSeed}
+        offices={officeSeed}
+        vehicles={vehicleSeed.map((v) => ({ ...v, active: false }))}
+        staff={staffSeed.map((s) => ({ ...s, active: false }))}
+        onSave={onSave}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /職員A.*詳細を見る/ }));
+    click("編集");
+    const modal = within(screen.getByRole("dialog"));
+    for (const label of ["車両", "運転手", "確認者"]) {
+      const select = modal.getByLabelText(label) as HTMLSelectElement;
+      expect(select.options).toHaveLength(2);
+      expect(select.selectedOptions[0].textContent).toContain("現在利用停止");
+    }
+    const set = (label: string, value: string) =>
+      fireEvent.change(modal.getByLabelText(label), { target: { value } });
+    set("日付", "2026-09-30");
+    set("出勤時 酒気帯び", "yes");
+    set("退勤時 酒気帯び", "yes");
+    set("出勤時 体温（℃）", "37.2");
+    set("指示事項", "prohibited");
+    set("特記事項", "停止後も過去記録を編集");
+    click("変更を保存");
+    expect(onSave).toHaveBeenCalledExactlyOnceWith({
+      ...alcoholSeed[0],
+      date: "2026-09-30",
+      startAlcoholDetected: true,
+      endAlcoholDetected: true,
+      startTemperature: 37.2,
+      drivingInstruction: "prohibited",
+      notes: "停止後も過去記録を編集",
+    });
+    expect((screen.getByLabelText("対象月") as HTMLInputElement).value).toBe(
+      "2026-09",
+    );
+    click("閉じる");
+    click("チェックを登録");
+    const create = within(screen.getByRole("dialog"));
+    for (const label of ["車両", "運転手", "確認者"]) {
+      expect(
+        (create.getByLabelText(label) as HTMLSelectElement).options,
+      ).toHaveLength(1);
+    }
+  });
+  it("changes the vehicle, driver and checker and resets list filters after editing", () => {
+    login();
+    click("設定");
+    click("アルコールチェック 手入力の確認記録（デモ）");
+    change("車両", "vehicle-1-1");
+    change("運転手", "staff-1");
+    fireEvent.click(screen.getByRole("button", { name: /職員A.*詳細を見る/ }));
+    click("編集");
+    const modal = within(screen.getByRole("dialog"));
+    for (const [label, value] of [
+      ["車両", "vehicle-1-2"],
+      ["運転手", "staff-2"],
+      ["確認者", "staff-3"],
+      ["日付", "2026-09-30"],
+    ]) {
+      fireEvent.change(modal.getByLabelText(label), { target: { value } });
+    }
+    click("変更を保存");
+    expect(
+      within(screen.getByRole("dialog")).getByText("新宿・デモ車2"),
+    ).toBeTruthy();
+    click("閉じる");
+    expect(screen.getByText("1件")).toBeTruthy();
+    expect((screen.getByLabelText("対象月") as HTMLInputElement).value).toBe(
+      "2026-09",
+    );
+    expect((screen.getByLabelText("車両") as HTMLSelectElement).value).toBe("");
+    expect((screen.getByLabelText("運転手") as HTMLSelectElement).value).toBe(
+      "",
+    );
+    expect(
+      screen.getByRole("button", { name: /職員B.*職員C.*詳細を見る/ }),
+    ).toBeTruthy();
+    change("対象月", "2026-10");
+    expect(screen.getByText("0件")).toBeTruthy();
+    change("事業所", "office-2");
+    expect(screen.getByText("1件")).toBeTruthy();
+  });
+  it.each([
+    "日付",
+    "車両",
+    "運転手",
+    "確認者",
+    "出勤時 酒気帯び",
+    "退勤時 酒気帯び",
+    "出勤時 体温（℃）",
+    "指示事項",
+  ])(
+    "rejects a missing required alcohol field in both registration and editing: %s",
+    (missing) => {
+      for (const mode of ["create", "edit"]) {
+        const onSave = vi.fn();
+        render(
+          <AlcoholChecks
+            records={alcoholSeed}
+            vehicles={vehicleSeed}
+            staff={staffSeed}
+            offices={officeSeed}
+            onSave={onSave}
+          />,
+        );
+        if (mode === "edit") {
+          fireEvent.click(
+            screen.getByRole("button", { name: /職員A.*詳細を見る/ }),
+          );
+          click("編集");
+        } else click("チェックを登録");
+        const dialog = screen.getByRole("dialog");
+        const modal = within(dialog);
+        for (const [label, value] of [
+          ["日付", "2026-10-01"],
+          ["車両", "vehicle-1-1"],
+          ["運転手", "staff-1"],
+          ["確認者", "staff-2"],
+          ["出勤時 酒気帯び", "no"],
+          ["退勤時 酒気帯び", "no"],
+          ["出勤時 体温（℃）", "36.5"],
+          ["指示事項", "allowed"],
+        ]) {
+          fireEvent.change(modal.getByLabelText(label), {
+            target: { value: label === missing ? "" : value },
+          });
+        }
+        // Submit directly too: the handler must guard against bypassing native required validation.
+        fireEvent.submit(dialog.querySelector("form")!);
+        expect(onSave).not.toHaveBeenCalled();
+        expect(modal.getByRole("alert")).toBeTruthy();
+        cleanup();
+      }
+    },
+  );
   it("saves weekly hours and dated leave, rendering hatch ranges in both modes without blocking a visit", () => {
     login();
     click("設定");

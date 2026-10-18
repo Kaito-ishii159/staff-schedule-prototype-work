@@ -206,6 +206,14 @@ export const travelTimeGuide = (duration: number) =>
         : duration < 150
           ? "改善を検討"
           : "移動負担が大きい";
+export function saveAlcoholRecord(
+  records: AlcoholCheckRecord[],
+  record: AlcoholCheckRecord,
+) {
+  return records.some((item) => item.id === record.id)
+    ? records.map((item) => (item.id === record.id ? record : item))
+    : [record, ...records];
+}
 export function filterAlcohol(
   records: AlcoholCheckRecord[],
   month: string,
