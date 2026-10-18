@@ -15,6 +15,7 @@ import {
   vehicleUse,
   travelSummary,
   filterAlcohol,
+  saveAlcoholRecord,
   nonWorkingRanges,
   pinchMode,
   travelTimeGuide,
@@ -242,6 +243,26 @@ test("monthly travel averages only days with active planned legs; transport spli
   assert.equal(total.averageDuration, 26 / 3);
   assert.equal(travelSummary(visits, "other", "2026-10").averageDuration, 0);
   assert.equal(travelSummary(visits, "s", "invalid").days, 0);
+});
+test("new alcohol records are prepended without modifying existing records", () => {
+  const existing = { id: "existing", notes: "original" };
+  const records = [existing];
+  const added = { id: "new", notes: "new entry" };
+  assert.deepEqual(saveAlcoholRecord(records, added), [added, existing]);
+  assert.deepEqual(records, [existing]);
+});
+test("editing an alcohol record retains ID, count, order and other records", () => {
+  const original = { id: "a", startTemperature: 36.5, notes: "before" };
+  const other = { id: "b", startTemperature: 36.7, notes: "untouched" };
+  const records = [other, original];
+  const edited = { ...original, startTemperature: 36.8, notes: "after" };
+  const result = saveAlcoholRecord(records, edited);
+  assert.equal(result.length, records.length);
+  assert.equal(result[1].id, original.id);
+  assert.deepEqual(result[1], edited);
+  assert.equal(result[0], other);
+  assert.equal(records[1], original);
+  assert.equal(original.notes, "before");
 });
 test("alcohol filters combine month, office, vehicle and stable driver ID", () => {
   const a = {

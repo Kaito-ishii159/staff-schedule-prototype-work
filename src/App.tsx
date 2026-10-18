@@ -38,6 +38,7 @@ import {
 import {
   deletionReasons,
   localEntries,
+  saveAlcoholRecord,
   vehicleUse,
   travelSummary,
   type AlcoholCheckRecord,
@@ -357,7 +358,7 @@ export default function App() {
           vehicles={vehicles}
           staff={staff}
           offices={offices}
-          onSave={(r) => setAlcohol((prev) => [r, ...prev])}
+          onSave={(r) => setAlcohol((prev) => saveAlcoholRecord(prev, r))}
         />
       );
       break;
